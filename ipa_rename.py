@@ -2,7 +2,9 @@
 #
 # Normalize IPA - iphone app filename from Info.plist properties (configurable)
 #
-# Usefull for archiving purposes when multiple app versions are stored localy.
+# Useful for archiving purposes when multiple app versions are stored localy.
+#
+# github: https://github.com/blue-sky-r/home-bin/blob/master/ipa_rename.py
 
 import zipfile
 import sys, os, re
@@ -15,7 +17,7 @@ MAJOR = 'MinimumOSVersion DTPlatformVersion CFBundleVersion CFBundleDisplayName 
 
 INFO = '/Info.plist'
 
-_version_ = '2018.3'
+_version_ = '2018.4'
 
 _usage_ = """
 = IPA rename = normalize ipa filename = version {} =
@@ -41,7 +43,7 @@ examples:
  use alternate format for normalization:
  {} -f '%CFBundleDisplayName-v%CFBundleVersion-ios%MinimumOSVersion' /NAS/apps/ttb.ipa
 
- shell expansion to process all files in specifix dir:
+ shell expansion to process all files in specific dir:
  {} /NAS/apps/*.ipa
 """
 
@@ -72,13 +74,13 @@ def ipa_readplist(ipa, plist):
                 error(2, err)
                 return
             for zinfo in zip.infolist():
-                #print("{}".format(zinfo.filename))
+                #print("zip: {}".format(zinfo.filename))
                 if zinfo.filename.endswith(plist):
                     data = zip.read(zinfo)
                     break
-                else:
-                    error(3, INFO)
-                    return
+            else:
+                error(3, INFO)
+                return
             root = plistlib.loads(data)
     except zipfile.BadZipFile:
         error(4, ipa)
@@ -113,7 +115,7 @@ def format_name(plist, format, space='_', ext='.ipa'):
 #  MAIN
 # ======
 
-# usage help
+# usage help if no args given
 usage()
 
 # init
