@@ -2,7 +2,7 @@
 #
 # Normalize IPA - iphone app filename from Info.plist properties (configurable)
 #
-# Useful for archiving purposes when multiple app versions are stored localy.
+# Useful for archiving purposes when multiple app versions are stored locally.
 #
 # github: https://github.com/blue-sky-r/home-bin/blob/master/ipa_rename.py
 
@@ -10,27 +10,31 @@ import zipfile
 import sys, os, re
 import plistlib
 
-FORMAT  = '%CFBundleName-v%CFBundleVersion-ios%MinimumOSVersion'
-FORMAT2 = '%CFBundleDisplayName-v%CFBundleVersion-ios%MinimumOSVersion'
+# default format string with property list tokens
+FORMAT  = '%CFBundleName|CFBundleDisplayName-v%CFBundleVersion-ios%MinimumOSVersion'
 
+# major properties recommended for format string
 MAJOR = 'MinimumOSVersion DTPlatformVersion CFBundleVersion CFBundleDisplayName CFBundleName'
 
+# information property list inside .ipa file
 INFO = '/Info.plist'
 
-_version_ = '2018.4'
+# version
+_version_ = '2018.4.1'
 
+# usage help
 _usage_ = """
 = IPA rename = normalize ipa filename = version {} =
 
-> {} [-n] [-k key] [-f format] src.ipa
+> {} [-n] [-k key] [-f 'format'] src.ipa
 
- n         ... dry-run, do not rename anything, just show what would be done
- k key     ... do not rename, just display specific key matched as case-sensitive substring
- k all     ... do not rename, just display complete list of properties
- k major   ... do not rename, just display list of major properties
- k 'k1 k2' ... do not rename, just display k1 and k2 property
- f format  ... specify format string (default {})
- src.ipa   ... source file(s) (shell expansion apply)
+ -n           ... dry-run, do not rename anything, just show what would be done
+ -k key       ... do not rename, just display specific key matched as case-sensitive substring
+ -k all       ... do not rename, just display complete list of properties
+ -k major     ... do not rename, just display list of major properties
+ -k 'k1 k2'   ... do not rename, just display k1 and k2 property
+ -f 'format'  ... specify format string (default {})
+ src.ipa      ... source file(s) (shell expansion apply)
 
 examples:
 
@@ -40,6 +44,9 @@ examples:
  display list of properties:
  {} -k all /NAS/apps/ttb.ipa
 
+ display list of major properties:
+ {} -k major /NAS/apps/ttb.ipa
+
  use alternate format for normalization:
  {} -f '%CFBundleDisplayName-v%CFBundleVersion-ios%MinimumOSVersion' /NAS/apps/ttb.ipa
 
@@ -47,41 +54,52 @@ examples:
  {} /NAS/apps/*.ipa
 """
 
+# error messages
 ERR = {
     2: 'ERR: ZIP error:{}',
     3: 'ERR: {} not found',
     4: 'ERR: not valid IPA file:{}',
-    5: 'ERR: {} returns empty property list'
+    5: 'ERR: {} returns empty property list',
+    6: 'ERR: {}'
 }
 
-def usage():
-    if len(sys.argv) > 1: return
+def usage(argc=1):
+    """ show usage help and exit if argc is less than required count """
+    if len(sys.argv) > argc: return
     S0 = sys.argv[0]
     print(_usage_.format(_version_, S0, FORMAT, S0, S0, S0, S0))
     sys.exit(1)
 
 def error(code, par=''):
-    """ print message ERR[exitcode] and die with exitcode """
-    print(ERR.get(code,'').format(par), file=sys.stderr)
+    """ print message ERR[exitcode] """
+    # print(ERR.get(code,'').format(par), file=sys.stderr)
+    print(ERR.get(code,'').format(par))
+
 
 def ipa_readplist(ipa, plist):
-    """ read plist from ipa/zip file or die with error """
+    """ read plist from ipa/zip file and handle errors """
     root = None
     try:
         with zipfile.ZipFile(ipa, 'r') as zip:
+            # validate crc/headers in zip file
             err = zip.testzip()
             if err:
                 error(2, err)
                 return
+            # parse zip
             for zinfo in zip.infolist():
                 #print("zip: {}".format(zinfo.filename))
+                # look for plist filename
                 if zinfo.filename.endswith(plist):
                     data = zip.read(zinfo)
                     break
             else:
                 error(3, INFO)
                 return
+            # load property list
             root = plistlib.loads(data)
+    except OSError as e:
+        error(6, '{}: {}'.format(e.strerror, e.filename))
     except zipfile.BadZipFile:
         error(4, ipa)
     return root
@@ -99,15 +117,25 @@ def print_plist(plist, match='all', sep=' '):
             print("{}: {}".format(k, plist.get(k, '')))
     return
 
-def format_name(plist, format, space='_', ext='.ipa'):
+def format_name(plist, format, empty='', space='_', ext='.ipa'):
     """ build new name based on format tokens """
     # start with format string
     name = format
     # all %tokens
-    for token in re.findall('(%[A-Z][a-zA-Z]+)', format):
-        # replace with plist
-        name = name.replace(token, plist.get(token[1:],''), 1)
-    # space replacement
+    for token in re.findall('(%[A-Z][|a-zA-Z]+)', format):
+        # token with alternatives
+        if '|' in token:
+            # token with alternatives
+            for subtoken in token[1:].split('|'):
+                # try subtoken value
+                val = plist.get(subtoken, empty)
+                # break if value not empty
+                if val != empty: break
+        else:
+            val = plist.get(token[1:], empty)
+        # replce token with val
+        name = name.replace(token, val, 1)
+    # space replacement and adding an extension
     return name.replace(' ', space) + ext
 
 
@@ -168,4 +196,4 @@ for par in it:
         os.rename(ipa, newname)
         print('OK')
     except OSError as e:
-        print('ERR: {}'.format(e.strerror))
+        error(6, '{}: {}'.format(e.strerror, e.filename))
